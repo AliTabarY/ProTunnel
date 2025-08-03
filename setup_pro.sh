@@ -6,7 +6,7 @@
 #   Original Concept: Ali Tabari
 #   Enhanced Version: 7.1.0 (With Multi-Protocol Support)
 #   Supported Protocols: TCP, KCP, QUIC, WSS
-#   GitHub: https://github.com/AliTabarY/ProTunnel
+#   GitHub: https://github.com/your-repo/tunnel-manager
 #
 # ==================================================================================
 
