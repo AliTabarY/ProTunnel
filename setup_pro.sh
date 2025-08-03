@@ -237,15 +237,19 @@ configure_frp_server() {
         return 1
     fi
     
-    # Port configuration
-    print_message "$YELLOW" "\n--- Application Tunnel Port ---"
-    print_message "$CYAN" "Enter the PUBLIC port your application (e.g., V2Ray) will be accessed on."
-    read -p "Public Application Port (e.g., 20500): " public_app_port
+    # Multi-port configuration
+    print_message "$YELLOW" "\n--- Application Tunnel Ports ---"
+    print_message "$CYAN" "Enter the PUBLIC ports your applications will be accessed on (comma-separated, e.g., 20500,20501,20502)."
+    read -p "Public Application Ports: " public_app_ports
     
-    if ! [[ "$public_app_port" =~ ^[0-9]+$ ]]; then
-        print_message "$RED" "Invalid port."
+    # Validate ports input
+    if ! [[ "$public_app_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
+        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
         return 1
     fi
+    
+    # Convert to array
+    IFS=',' read -ra public_ports_array <<< "$public_app_ports"
     
     # WSS configuration
     local domain_name=""
@@ -297,7 +301,7 @@ bind_addr = 127.0.0.1
 bind_port = ${FRP_INTERNAL_TCP_PORT}
 kcp_bind_port = ${DEFAULT_FRP_KCP_PORT}
 quic_bind_port = ${DEFAULT_FRP_QUIC_PORT}
-allow_ports = ${DEFAULT_FRP_INTERNAL_APP_PORT}
+allow_ports = $(echo "${public_ports_array[@]}" | tr ' ' ',')
 EOF
 
     # Nginx stream configuration
@@ -314,8 +318,13 @@ EOF
     if $use_quic; then
         echo "    server { listen ${DEFAULT_FRP_QUIC_PORT} udp; proxy_pass 127.0.0.1:${DEFAULT_FRP_QUIC_PORT}; }" >> ${stream_config_file}
     fi
-    echo "    server { listen ${public_app_port}; proxy_pass 127.0.0.1:${DEFAULT_FRP_INTERNAL_APP_PORT}; }" >> ${stream_config_file}
-    echo "    server { listen ${public_app_port} udp; proxy_pass 127.0.0.1:${DEFAULT_FRP_INTERNAL_APP_PORT}; }" >> ${stream_config_file}
+    
+    # Add multiple port mappings
+    for port in "${public_ports_array[@]}"; do
+        echo "    server { listen ${port}; proxy_pass 127.0.0.1:${port}; }" >> ${stream_config_file}
+        echo "    server { listen ${port} udp; proxy_pass 127.0.0.1:${port}; }" >> ${stream_config_file}
+    done
+    
     echo "}" >> ${stream_config_file}
     
     if ! grep -q "include /etc/nginx/frp_stream.conf;" /etc/nginx/nginx.conf; then
@@ -392,7 +401,10 @@ EOF
     
     # Firewall configuration
     if command -v ufw &>/dev/null; then
-        ufw allow ${public_app_port}
+        for port in "${public_ports_array[@]}"; do
+            ufw allow ${port}
+        done
+        
         ufw allow ${FRP_PUBLIC_TCP_PORT}/tcp
         ufw allow ${DEFAULT_FRP_KCP_PORT}/udp
         ufw allow ${DEFAULT_FRP_QUIC_PORT}/udp
@@ -407,7 +419,7 @@ EOF
     
     print_message "$GREEN" "\n✅ FRP Server setup complete."
     print_message "$CYAN" "--- IMPORTANT: CLIENT CONFIGURATION ---"
-    print_message "$YELLOW" "On your client, you must set 'remote_port' to: ${YELLOW}${BOLD}${DEFAULT_FRP_INTERNAL_APP_PORT}${NC}"
+    print_message "$YELLOW" "On your client, you must set 'remote_port' to match these ports: ${YELLOW}${BOLD}${public_app_ports}${NC}"
     print_message "$YELLOW" "Auth Token: ${token}"
 }
 
@@ -433,21 +445,43 @@ configure_frp_client() {
     print_message "$YELLOW" "\n--- Tunnel Port Configuration ---"
     read -p "Enter the X-UI PANEL port on this server to PREVENT it from being tunneled (optional): " panel_port
     
-    print_message "$CYAN" "Now, enter the application port running on THIS machine that you want to tunnel."
-    read -p "LOCAL Application Port (e.g., 20500): " local_port
+    print_message "$CYAN" "Now, enter the application ports running on THIS machine that you want to tunnel (comma-separated, e.g., 20500,20501,20502)."
+    read -p "LOCAL Application Ports: " local_ports
     
-    if ! [[ "$local_port" =~ ^[0-9]+$ ]]; then
-        print_message "$RED" "Invalid port."
+    if ! [[ "$local_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
+        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
         return 1
     fi
     
-    if [[ -n "$panel_port" && "$local_port" == "$panel_port" ]]; then
-        print_message "$RED" "Error: Your application port ('$local_port') cannot be the same as your panel port!"
+    # Convert to array
+    IFS=',' read -ra local_ports_array <<< "$local_ports"
+    
+    # Check if panel port is in local ports
+    if [[ -n "$panel_port" ]]; then
+        for port in "${local_ports_array[@]}"; do
+            if [[ "$port" == "$panel_port" ]]; then
+                print_message "$RED" "Error: Your application port ('$port') cannot be the same as your panel port!"
+                return 1
+            fi
+        done
+    fi
+    
+    print_message "$CYAN" "Enter the REMOTE ports on the server that will map to your local ports (comma-separated, must match count)."
+    read -p "REMOTE Application Ports: " remote_ports
+    
+    if ! [[ "$remote_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
+        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
         return 1
     fi
     
-    local remote_port=${DEFAULT_FRP_INTERNAL_APP_PORT}
-    print_message "$GREEN" "--> Automatically setting remote_port to ${remote_port} to match the server's internal port."
+    # Convert to array
+    IFS=',' read -ra remote_ports_array <<< "$remote_ports"
+    
+    # Check counts match
+    if [ ${#local_ports_array[@]} -ne ${#remote_ports_array[@]} ]; then
+        print_message "$RED" "Error: Number of local ports (${#local_ports_array[@]}) must match number of remote ports (${#remote_ports_array[@]})."
+        return 1
+    fi
 
     # FRP client configuration
     cat > ${FRP_INSTALL_DIR}/frpc.ini << EOF
@@ -485,8 +519,12 @@ EOF
             ;;
     esac
 
-    # Tunnel configuration
-    cat >> ${FRP_INSTALL_DIR}/frpc.ini << EOF
+    # Tunnel configuration for each port pair
+    for i in "${!local_ports_array[@]}"; do
+        local_port="${local_ports_array[$i]}"
+        remote_port="${remote_ports_array[$i]}"
+        
+        cat >> ${FRP_INSTALL_DIR}/frpc.ini << EOF
 
 [app_tcp_${local_port}]
 type = tcp
@@ -500,6 +538,7 @@ local_ip = 127.0.0.1
 local_port = ${local_port}
 remote_port = ${remote_port}
 EOF
+    done
     
     # Fix line endings
     sed -i 's/\r$//' ${FRP_INSTALL_DIR}/frpc.ini
@@ -526,7 +565,10 @@ EOF
     systemctl restart frpc.service
     
     print_message "$GREEN" "✅ FRP Client configured."
-    print_message "$YELLOW" "Using remote_port: ${remote_port}"
+    print_message "$YELLOW" "Port mappings:"
+    for i in "${!local_ports_array[@]}"; do
+        print_message "$YELLOW" "  Local:${local_ports_array[$i]} -> Remote:${remote_ports_array[$i]}"
+    done
 }
 
 configure_chisel_server() {
@@ -612,9 +654,15 @@ configure_chisel_client() {
     # Protocol selection
     read -p "Use HTTPS? (y/n): " use_https
     
-    # Port forwarding configuration
-    read -p "Enter REMOTE port to open on server: " remote_port
-    read -p "Enter LOCAL port to forward from this machine: " local_port
+    # Multi-port forwarding configuration
+    print_message "$CYAN" "Enter REMOTE:PORT:LOCAL:PORT mappings (comma-separated, e.g., 20500:127.0.0.1:20500,20501:127.0.0.1:20501)"
+    read -p "Port mappings: " port_mappings
+    
+    # Validate input
+    if ! [[ "$port_mappings" =~ ^([0-9]+:[0-9.]+:[0-9]+,)*[0-9]+:[0-9.]+:[0-9]+$ ]]; then
+        print_message "$RED" "Invalid port mapping format. Use REMOTE:IP:LOCAL format, comma-separated."
+        return 1
+    fi
     
     # Build chisel command
     local schema="http"
@@ -625,7 +673,14 @@ configure_chisel_client() {
         tls_flags="--tls-skip-verify"
     fi
     
-    local chisel_cmd="/opt/chisel/chisel client --auth ${auth_user}:${auth_pass} --keepalive 25s ${tls_flags} ${schema}://${server_address}:${server_port} R:${remote_port}:127.0.0.1:${local_port}"
+    # Split mappings and build command
+    IFS=',' read -ra mappings_array <<< "$port_mappings"
+    local mappings_string=""
+    for mapping in "${mappings_array[@]}"; do
+        mappings_string+=" R:$mapping"
+    done
+    
+    local chisel_cmd="/opt/chisel/chisel client --auth ${auth_user}:${auth_pass} --keepalive 25s ${tls_flags} ${schema}://${server_address}:${server_port}${mappings_string}"
     
     # Chisel Client Service Configuration
     cat > ${SYSTEMD_DIR}/chisel-client.service << EOF
@@ -649,7 +704,10 @@ EOF
     systemctl restart chisel-client.service
     
     print_message "$GREEN" "✅ Chisel Client configured."
-    print_message "$YELLOW" "Forwarding: remote:${remote_port} -> local:${local_port}"
+    print_message "$YELLOW" "Forwarding mappings:"
+    for mapping in "${mappings_array[@]}"; do
+        print_message "$YELLOW" "  Remote:${mapping%:*} -> Local:${mapping#*:}"
+    done
 }
 
 # ==================================================================================
