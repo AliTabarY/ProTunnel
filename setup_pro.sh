@@ -2,9 +2,9 @@
 #
 # ==================================================================================
 #
-#   Advanced Tunnel Manager for FRP & Chisel (Final Edition)
+#   Advanced Tunnel Manager for FRP & Chisel (Final Edition - Multi-Port/Multi-Tunnel)
 #   Original Concept: Ali Tabari
-#   Enhanced Version: 7.1.0 (With Multi-Protocol Support)
+#   Enhanced Version: 7.3.0 (With Full Multi-Port & Multi-Protocol Support)
 #   Supported Protocols: TCP, KCP, QUIC, WSS
 #   GitHub: https://github.com/your-repo/tunnel-manager
 #
@@ -24,7 +24,6 @@ DEFAULT_FRP_KCP_PORT=7001
 DEFAULT_FRP_QUIC_PORT=7002
 DEFAULT_FRP_DASHBOARD_PORT=7500
 DEFAULT_FRP_WSS_NGINX_PORT=443
-DEFAULT_FRP_INTERNAL_APP_PORT=7878
 DEFAULT_CHISEL_PORT=8080
 
 # --- Color Codes ---
@@ -40,13 +39,13 @@ print_message() { local color=$1; local message=$2; echo -e "${color}${message}$
 print_header() {
     clear
     echo -e "${BLUE}"
-    echo "██████╗ ██████╗  ██████╗      ████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     "
-    echo "██╔══██╗██╔══██╗██╔═══██╗     ╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     "
-    echo "██████╔╝██████╔╝██║   ██║        ██║   ██║   ██║██╔██╗ ██║██╔██╗ ██║█████╗  ██║     "
-    echo "██╔═══╝ ██╔══██╗██║   ██║        ██║   ██║   ██║██║╚██╗██║██║╚██╗██║██╔══╝  ██║     "
-    echo "██║     ██║  ██║╚██████╔╝        ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗"
-    echo "╚═╝     ╚═╝  ╚═╝ ╚═════╝         ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝"
-    echo -e "${PURPLE}                                                  v7.1.0 (Multi-Protocol)${NC}"
+    echo "██████╗ ██████╗  ██████╗     ████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     "
+    echo "██╔══██╗██╔══██╗██╔═══██╗    ╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     "
+    echo "██████╔╝██████╔╝██║   ██║       ██║   ██║   ██║██╔██╗ ██║██╔██╗ ██║█████╗  ██║     "
+    echo "██╔═══╝ ██╔══██╗██║   ██║       ██║   ██║   ██║██║╚██╗██║██║╚██╗██║██╔══╝  ██║     "
+    echo "██║     ██║  ██║╚██████╔╝       ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗"
+    echo "╚═╝     ╚═╝  ╚═╝ ╚═════╝        ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝"
+    echo -e "${PURPLE}                                         v7.3.0 (Multi-Protocol/Multi-Tunnel)${NC}"
     echo -e "${YELLOW}════════════════════════════════════════════════════════════════════════════${NC}\n"
 }
 print_section() { local title=$1; echo ""; echo -e "${BG_BLUE}${WHITE}${BOLD} $title ${NC}"; echo -e "${YELLOW}────────────────────────────────────────────────────────────────────────${NC}"; }
@@ -76,7 +75,7 @@ display_status() {
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
     printf "${GREEN}║${NC} ${CYAN}IP Address:${NC} %-50s${GREEN}║${NC}\n" "$ip"; printf "${GREEN}║${NC} ${CYAN}Architecture:${NC} %-47s${GREEN}║${NC}\n" "$arch"; printf "${GREEN}║${NC} ${CYAN}Hostname:${NC} %-50s${GREEN}║${NC}\n" "$hostname"
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${GREEN}║ ${YELLOW}${BOLD}SERVICE STATUS${NC}                                              ${GREEN}║${NC}"
+    echo -e "${GREEN}║ ${YELLOW}${BOLD}SERVICE STATUS${NC}                                                ${GREEN}║${NC}"
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
     if $frp_installed; then
         if $frps_active; then printf "${GREEN}║${NC} ${CYAN}FRP Server:${NC} [ ${GREEN}✅ ACTIVE${NC} ]%-41s${GREEN}║${NC}\n" ""; fi
@@ -237,19 +236,15 @@ configure_frp_server() {
         return 1
     fi
     
-    # Multi-port configuration
-    print_message "$YELLOW" "\n--- Application Tunnel Ports ---"
-    print_message "$CYAN" "Enter the PUBLIC ports your applications will be accessed on (comma-separated, e.g., 20500,20501,20502)."
-    read -p "Public Application Ports: " public_app_ports
+    # Port configuration
+    print_message "$YELLOW" "\n--- Application Tunnel Port Range ---"
+    print_message "$CYAN" "Enter the range of ports that clients can request on the server."
+    read -p "Allowed Port Range (e.g., 20000-21000): " allowed_ports_range
     
-    # Validate ports input
-    if ! [[ "$public_app_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
-        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
+    if ! [[ "$allowed_ports_range" =~ ^[0-9]+-[0-9]+$ ]]; then
+        print_message "$RED" "Invalid port range format. Use format like 20000-21000."
         return 1
     fi
-    
-    # Convert to array
-    IFS=',' read -ra public_ports_array <<< "$public_app_ports"
     
     # WSS configuration
     local domain_name=""
@@ -297,11 +292,11 @@ dashboard_addr = 127.0.0.1
 dashboard_port = ${DEFAULT_FRP_DASHBOARD_PORT}
 dashboard_user = admin
 dashboard_pwd = ${token}
-bind_addr = 127.0.0.1
+bind_addr = 0.0.0.0
 bind_port = ${FRP_INTERNAL_TCP_PORT}
 kcp_bind_port = ${DEFAULT_FRP_KCP_PORT}
 quic_bind_port = ${DEFAULT_FRP_QUIC_PORT}
-allow_ports = $(echo "${public_ports_array[@]}" | tr ' ' ',')
+allow_ports = ${allowed_ports_range}
 EOF
 
     # Nginx stream configuration
@@ -318,13 +313,6 @@ EOF
     if $use_quic; then
         echo "    server { listen ${DEFAULT_FRP_QUIC_PORT} udp; proxy_pass 127.0.0.1:${DEFAULT_FRP_QUIC_PORT}; }" >> ${stream_config_file}
     fi
-    
-    # Add multiple port mappings
-    for port in "${public_ports_array[@]}"; do
-        echo "    server { listen ${port}; proxy_pass 127.0.0.1:${port}; }" >> ${stream_config_file}
-        echo "    server { listen ${port} udp; proxy_pass 127.0.0.1:${port}; }" >> ${stream_config_file}
-    done
-    
     echo "}" >> ${stream_config_file}
     
     if ! grep -q "include /etc/nginx/frp_stream.conf;" /etc/nginx/nginx.conf; then
@@ -401,10 +389,9 @@ EOF
     
     # Firewall configuration
     if command -v ufw &>/dev/null; then
-        for port in "${public_ports_array[@]}"; do
-            ufw allow ${port}
-        done
-        
+        local ufw_port_range=$(echo "$allowed_ports_range" | sed 's/-/:/')
+        ufw allow ${ufw_port_range}/tcp
+        ufw allow ${ufw_port_range}/udp
         ufw allow ${FRP_PUBLIC_TCP_PORT}/tcp
         ufw allow ${DEFAULT_FRP_KCP_PORT}/udp
         ufw allow ${DEFAULT_FRP_QUIC_PORT}/udp
@@ -419,7 +406,7 @@ EOF
     
     print_message "$GREEN" "\n✅ FRP Server setup complete."
     print_message "$CYAN" "--- IMPORTANT: CLIENT CONFIGURATION ---"
-    print_message "$YELLOW" "On your client, you must set 'remote_port' to match these ports: ${YELLOW}${BOLD}${public_app_ports}${NC}"
+    print_message "$YELLOW" "On your client, you can use any 'remote_port' within the range: ${YELLOW}${BOLD}${allowed_ports_range}${NC}"
     print_message "$YELLOW" "Auth Token: ${token}"
 }
 
@@ -445,45 +432,7 @@ configure_frp_client() {
     print_message "$YELLOW" "\n--- Tunnel Port Configuration ---"
     read -p "Enter the X-UI PANEL port on this server to PREVENT it from being tunneled (optional): " panel_port
     
-    print_message "$CYAN" "Now, enter the application ports running on THIS machine that you want to tunnel (comma-separated, e.g., 20500,20501,20502)."
-    read -p "LOCAL Application Ports: " local_ports
-    
-    if ! [[ "$local_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
-        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
-        return 1
-    fi
-    
-    # Convert to array
-    IFS=',' read -ra local_ports_array <<< "$local_ports"
-    
-    # Check if panel port is in local ports
-    if [[ -n "$panel_port" ]]; then
-        for port in "${local_ports_array[@]}"; do
-            if [[ "$port" == "$panel_port" ]]; then
-                print_message "$RED" "Error: Your application port ('$port') cannot be the same as your panel port!"
-                return 1
-            fi
-        done
-    fi
-    
-    print_message "$CYAN" "Enter the REMOTE ports on the server that will map to your local ports (comma-separated, must match count)."
-    read -p "REMOTE Application Ports: " remote_ports
-    
-    if ! [[ "$remote_ports" =~ ^([0-9]+,)*[0-9]+$ ]]; then
-        print_message "$RED" "Invalid ports format. Please use comma-separated numbers."
-        return 1
-    fi
-    
-    # Convert to array
-    IFS=',' read -ra remote_ports_array <<< "$remote_ports"
-    
-    # Check counts match
-    if [ ${#local_ports_array[@]} -ne ${#remote_ports_array[@]} ]; then
-        print_message "$RED" "Error: Number of local ports (${#local_ports_array[@]}) must match number of remote ports (${#remote_ports_array[@]})."
-        return 1
-    fi
-
-    # FRP client configuration
+    # Create/overwrite frpc.ini with [common] section
     cat > ${FRP_INSTALL_DIR}/frpc.ini << EOF
 [common]
 server_addr = ${server_addr}
@@ -507,7 +456,8 @@ EOF
                 print_message "$RED" "Domain is required."
                 return 1
             fi
-            echo "server_addr = ${wss_domain}" >> ${FRP_INSTALL_DIR}/frpc.ini
+            # Overwrite server_addr for WSS case
+            sed -i "s/server_addr = .*/server_addr = ${wss_domain}/" ${FRP_INSTALL_DIR}/frpc.ini
             echo "server_port = ${DEFAULT_FRP_WSS_NGINX_PORT}" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "protocol = wss" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "tls_enable = true" >> ${FRP_INSTALL_DIR}/frpc.ini
@@ -519,25 +469,43 @@ EOF
             ;;
     esac
 
-    # Tunnel configuration for each port pair
-    for i in "${!local_ports_array[@]}"; do
-        local_port="${local_ports_array[$i]}"
-        remote_port="${remote_ports_array[$i]}"
+    # Loop to add multiple tunnels
+    while true; do
+        print_message "$CYAN" "\n--- Adding a New Tunnel ---"
+        read -p "Enter LOCAL Port (or press Enter to finish): " local_port
+
+        if [ -z "$local_port" ]; then
+            break
+        fi
+
+        read -p "Enter REMOTE Port for '${local_port}': " remote_port
+
+        if ! [[ "$local_port" =~ ^[0-9]+$ && "$remote_port" =~ ^[0-9]+$ ]]; then
+            print_message "$RED" "Invalid port(s). Please try again."
+            continue
+        fi
         
+        if [[ -n "$panel_port" && ("$local_port" == "$panel_port" || "$remote_port" == "$panel_port") ]]; then
+            print_message "$RED" "Error: Tunnel port cannot be the same as the panel port! Please try again."
+            continue
+        fi
+
+        # Append the new tunnel sections to frpc.ini
         cat >> ${FRP_INSTALL_DIR}/frpc.ini << EOF
 
-[app_tcp_${local_port}]
+[app_tcp_${local_port}_to_${remote_port}]
 type = tcp
 local_ip = 127.0.0.1
 local_port = ${local_port}
 remote_port = ${remote_port}
 
-[app_udp_${local_port}]
+[app_udp_${local_port}_to_${remote_port}]
 type = udp
 local_ip = 127.0.0.1
 local_port = ${local_port}
 remote_port = ${remote_port}
 EOF
+        print_message "$GREEN" "✅ Tunnel ${local_port} -> ${remote_port} added."
     done
     
     # Fix line endings
@@ -564,11 +532,7 @@ EOF
     systemctl enable frpc.service
     systemctl restart frpc.service
     
-    print_message "$GREEN" "✅ FRP Client configured."
-    print_message "$YELLOW" "Port mappings:"
-    for i in "${!local_ports_array[@]}"; do
-        print_message "$YELLOW" "  Local:${local_ports_array[$i]} -> Remote:${remote_ports_array[$i]}"
-    done
+    print_message "$GREEN" "\n✅ FRP Client configured with all tunnels."
 }
 
 configure_chisel_server() {
@@ -654,15 +618,9 @@ configure_chisel_client() {
     # Protocol selection
     read -p "Use HTTPS? (y/n): " use_https
     
-    # Multi-port forwarding configuration
-    print_message "$CYAN" "Enter REMOTE:PORT:LOCAL:PORT mappings (comma-separated, e.g., 20500:127.0.0.1:20500,20501:127.0.0.1:20501)"
-    read -p "Port mappings: " port_mappings
-    
-    # Validate input
-    if ! [[ "$port_mappings" =~ ^([0-9]+:[0-9.]+:[0-9]+,)*[0-9]+:[0-9.]+:[0-9]+$ ]]; then
-        print_message "$RED" "Invalid port mapping format. Use REMOTE:IP:LOCAL format, comma-separated."
-        return 1
-    fi
+    # Port forwarding configuration
+    read -p "Enter REMOTE port to open on server: " remote_port
+    read -p "Enter LOCAL port to forward from this machine: " local_port
     
     # Build chisel command
     local schema="http"
@@ -673,14 +631,7 @@ configure_chisel_client() {
         tls_flags="--tls-skip-verify"
     fi
     
-    # Split mappings and build command
-    IFS=',' read -ra mappings_array <<< "$port_mappings"
-    local mappings_string=""
-    for mapping in "${mappings_array[@]}"; do
-        mappings_string+=" R:$mapping"
-    done
-    
-    local chisel_cmd="/opt/chisel/chisel client --auth ${auth_user}:${auth_pass} --keepalive 25s ${tls_flags} ${schema}://${server_address}:${server_port}${mappings_string}"
+    local chisel_cmd="/opt/chisel/chisel client --auth ${auth_user}:${auth_pass} --keepalive 25s ${tls_flags} ${schema}://${server_address}:${server_port} R:${remote_port}:127.0.0.1:${local_port}"
     
     # Chisel Client Service Configuration
     cat > ${SYSTEMD_DIR}/chisel-client.service << EOF
@@ -704,10 +655,7 @@ EOF
     systemctl restart chisel-client.service
     
     print_message "$GREEN" "✅ Chisel Client configured."
-    print_message "$YELLOW" "Forwarding mappings:"
-    for mapping in "${mappings_array[@]}"; do
-        print_message "$YELLOW" "  Remote:${mapping%:*} -> Local:${mapping#*:}"
-    done
+    print_message "$YELLOW" "Forwarding: remote:${remote_port} -> local:${local_port}"
 }
 
 # ==================================================================================
@@ -808,11 +756,11 @@ manage_services() {
         print_header
         print_section "SERVICE MANAGEMENT"
         
-        echo "  1) Restart FRP Server      5) Stop FRP Server"
-        echo "  2) Restart FRP Client      6) Stop FRP Client"
-        echo "  3) Restart Chisel Server   7) Stop Chisel Server"
-        echo "  4) Restart Chisel Client   8) Stop Chisel Client"
-        echo "  9) Restart Nginx           10) Back to Main Menu"
+        echo "  1) Restart FRP Server     5) Stop FRP Server"
+        echo "  2) Restart FRP Client     6) Stop FRP Client"
+        echo "  3) Restart Chisel Server  7) Stop Chisel Server"
+        echo "  4) Restart Chisel Client  8) Stop Chisel Client"
+        echo "  9) Restart Nginx          10) Back to Main Menu"
         
         read -p "Choice [1-10]: " choice
         
@@ -840,8 +788,8 @@ view_logs() {
         print_header
         print_section "LOG VIEWER"
         
-        echo "  1) FRP Server      3) Chisel Server      5) Nginx"
-        echo "  2) FRP Client      4) Chisel Client      6) Back to Main Menu"
+        echo "  1) FRP Server     3) Chisel Server    5) Nginx"
+        echo "  2) FRP Client     4) Chisel Client    6) Back to Main Menu"
         
         read -p "Choice [1-6]: " choice
         
