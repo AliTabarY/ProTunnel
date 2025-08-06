@@ -4,7 +4,7 @@
 #
 #   Advanced Tunnel Manager for FRP & Chisel (Final Edition - Multi-Port/Multi-Tunnel)
 #   Original Concept: Ali Tabari
-#   Enhanced Version: 7.3.0 (With Full Multi-Port & Multi-Protocol Support)
+#   Enhanced Version: 7.3.2 (With Intelligent Service Restart)
 #   Supported Protocols: TCP, KCP, QUIC, WSS
 #   GitHub: https://github.com/your-repo/tunnel-manager
 #
@@ -39,13 +39,13 @@ print_message() { local color=$1; local message=$2; echo -e "${color}${message}$
 print_header() {
     clear
     echo -e "${BLUE}"
-    echo "██████╗ ██████╗  ██████╗     ████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     "
-    echo "██╔══██╗██╔══██╗██╔═══██╗    ╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     "
-    echo "██████╔╝██████╔╝██║   ██║       ██║   ██║   ██║██╔██╗ ██║██╔██╗ ██║█████╗  ██║     "
-    echo "██╔═══╝ ██╔══██╗██║   ██║       ██║   ██║   ██║██║╚██╗██║██║╚██╗██║██╔══╝  ██║     "
-    echo "██║     ██║  ██║╚██████╔╝       ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗"
-    echo "╚═╝     ╚═╝  ╚═╝ ╚═════╝        ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝"
-    echo -e "${PURPLE}                                         v7.3.0 (Multi-Protocol/Multi-Tunnel)${NC}"
+    echo "██████╗ ██████╗  ██████╗      ████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     "
+    echo "██╔══██╗██╔══██╗██╔═══██╗     ╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     "
+    echo "██████╔╝██████╔╝██║   ██║        ██║   ██║   ██║██╔██╗ ██║██╔██╗ ██║█████╗  ██║     "
+    echo "██╔═══╝ ██╔══██╗██║   ██║        ██║   ██║   ██║██║╚██╗██║██║╚██╗██║██╔══╝  ██║     "
+    echo "██║     ██║  ██║╚██████╔╝        ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗"
+    echo "╚═╝     ╚═╝  ╚═╝ ╚═════╝         ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝"
+    echo -e "${PURPLE}                                      v7.3.2 (With Intelligent Service Restart)${NC}"
     echo -e "${YELLOW}════════════════════════════════════════════════════════════════════════════${NC}\n"
 }
 print_section() { local title=$1; echo ""; echo -e "${BG_BLUE}${WHITE}${BOLD} $title ${NC}"; echo -e "${YELLOW}────────────────────────────────────────────────────────────────────────${NC}"; }
@@ -75,7 +75,7 @@ display_status() {
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
     printf "${GREEN}║${NC} ${CYAN}IP Address:${NC} %-50s${GREEN}║${NC}\n" "$ip"; printf "${GREEN}║${NC} ${CYAN}Architecture:${NC} %-47s${GREEN}║${NC}\n" "$arch"; printf "${GREEN}║${NC} ${CYAN}Hostname:${NC} %-50s${GREEN}║${NC}\n" "$hostname"
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${GREEN}║ ${YELLOW}${BOLD}SERVICE STATUS${NC}                                                ${GREEN}║${NC}"
+    echo -e "${GREEN}║ ${YELLOW}${BOLD}SERVICE STATUS${NC}                                                  ${GREEN}║${NC}"
     echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
     if $frp_installed; then
         if $frps_active; then printf "${GREEN}║${NC} ${CYAN}FRP Server:${NC} [ ${GREEN}✅ ACTIVE${NC} ]%-41s${GREEN}║${NC}\n" ""; fi
@@ -205,11 +205,9 @@ obtain_ssl_certificate() {
 configure_frp_server() {
     print_section "CONFIGURING FRP SERVER"
     
-    # Authentication token
     read -p "Enter auth token (press Enter for random): " token
     [ -z "$token" ] && token=$(head -c 16 /dev/urandom | base64)
     
-    # Protocol selection
     local use_tcp=false use_kcp=false use_quic=false use_wss=false
     echo
     print_message "$YELLOW" "Which protocols to enable? (e.g., 1,4 or 5 for all)"
@@ -221,7 +219,6 @@ configure_frp_server() {
     if [[ "$p_choice" == *"3"* || "$p_choice" == *"5"* ]]; then use_quic=true; fi
     if [[ "$p_choice" == *"4"* || "$p_choice" == *"5"* ]]; then use_wss=true; fi
 
-    # Nginx installation check
     if ! command -v nginx &>/dev/null; then
         print_message "$YELLOW" "Nginx not found, attempting to install..."
         apt-get update -y
@@ -236,7 +233,6 @@ configure_frp_server() {
         return 1
     fi
     
-    # Port configuration
     print_message "$YELLOW" "\n--- Application Tunnel Port Range ---"
     print_message "$CYAN" "Enter the range of ports that clients can request on the server."
     read -p "Allowed Port Range (e.g., 20000-21000): " allowed_ports_range
@@ -246,7 +242,6 @@ configure_frp_server() {
         return 1
     fi
     
-    # WSS configuration
     local domain_name=""
     if $use_wss; then
         if ! command -v certbot &>/dev/null; then
@@ -261,7 +256,6 @@ configure_frp_server() {
             return 1
         fi
         
-        # Configure Nginx for ACME challenges
         cat > /etc/nginx/sites-available/frp-proxy << EOF
 server {
     listen 80;
@@ -284,7 +278,6 @@ EOF
         obtain_ssl_certificate "$domain_name" "$email_address" "" || return 1
     fi
     
-    # FRP server configuration
     cat > ${FRP_INSTALL_DIR}/frps.ini << EOF
 [common]
 token = ${token}
@@ -299,7 +292,6 @@ quic_bind_port = ${DEFAULT_FRP_QUIC_PORT}
 allow_ports = ${allowed_ports_range}
 EOF
 
-    # Nginx stream configuration
     print_message "$BLUE" "\nConfiguring Nginx as the public-facing proxy..."
     local stream_config_file="/etc/nginx/frp_stream.conf"
     
@@ -319,7 +311,6 @@ EOF
         echo -e "\ninclude /etc/nginx/frp_stream.conf;" >> /etc/nginx/nginx.conf
     fi
 
-    # WSS server configuration
     if $use_wss; then
         cat >> /etc/nginx/sites-available/frp-proxy << EOF
 server {
@@ -351,7 +342,6 @@ EOF
         fi
     fi
 
-    # FRP Server Service Configuration (Enhanced Version)
     cat > ${SYSTEMD_DIR}/frps.service << EOF
 [Unit]
 Description=FRP (Fast Reverse Proxy) Server
@@ -375,7 +365,6 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-    # Reload and enable services
     systemctl daemon-reload
     systemctl enable frps.service
     
@@ -387,7 +376,6 @@ EOF
     systemctl restart nginx
     systemctl restart frps.service
     
-    # Firewall configuration
     if command -v ufw &>/dev/null; then
         local ufw_port_range=$(echo "$allowed_ports_range" | sed 's/-/:/')
         ufw allow ${ufw_port_range}/tcp
@@ -413,7 +401,6 @@ EOF
 configure_frp_client() {
     print_section "CONFIGURING FRP CLIENT"
     
-    # Server connection details
     read -p "Enter server address (IP or domain): " server_addr
     read -p "Enter auth token: " token
     
@@ -422,17 +409,14 @@ configure_frp_client() {
         return 1
     fi
     
-    # Protocol selection
     echo
     print_message "$YELLOW" "Select the SINGLE protocol this client should use to connect:"
     echo "  1) TCP  2) KCP  3) QUIC  4) WSS"
     read -p "Choice [1-4]: " p_choice
 
-    # Port configuration
     print_message "$YELLOW" "\n--- Tunnel Port Configuration ---"
     read -p "Enter the X-UI PANEL port on this server to PREVENT it from being tunneled (optional): " panel_port
     
-    # Create/overwrite frpc.ini with [common] section
     cat > ${FRP_INSTALL_DIR}/frpc.ini << EOF
 [common]
 server_addr = ${server_addr}
@@ -440,36 +424,33 @@ token = ${token}
 login_fail_exit = false
 EOF
 
-    # Protocol specific configuration
     case $p_choice in
-        2) # KCP
+        2)
             echo "server_port = ${DEFAULT_FRP_KCP_PORT}" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "protocol = kcp" >> ${FRP_INSTALL_DIR}/frpc.ini
             ;;
-        3) # QUIC
+        3)
             echo "server_port = ${DEFAULT_FRP_QUIC_PORT}" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "protocol = quic" >> ${FRP_INSTALL_DIR}/frpc.ini
             ;;
-        4) # WSS
+        4)
             read -p "Please re-enter server DOMAIN for WSS: " wss_domain
             if [ -z "$wss_domain" ]; then
                 print_message "$RED" "Domain is required."
                 return 1
             fi
-            # Overwrite server_addr for WSS case
             sed -i "s/server_addr = .*/server_addr = ${wss_domain}/" ${FRP_INSTALL_DIR}/frpc.ini
             echo "server_port = ${DEFAULT_FRP_WSS_NGINX_PORT}" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "protocol = wss" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "tls_enable = true" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "server_name = ${wss_domain}" >> ${FRP_INSTALL_DIR}/frpc.ini
             ;;
-        *) # Default to TCP
+        *)
             echo "server_port = ${FRP_PUBLIC_TCP_PORT}" >> ${FRP_INSTALL_DIR}/frpc.ini
             echo "protocol = tcp" >> ${FRP_INSTALL_DIR}/frpc.ini
             ;;
     esac
 
-    # Loop to add multiple tunnels
     while true; do
         print_message "$CYAN" "\n--- Adding a New Tunnel ---"
         read -p "Enter LOCAL Port (or press Enter to finish): " local_port
@@ -490,7 +471,6 @@ EOF
             continue
         fi
 
-        # Append the new tunnel sections to frpc.ini
         cat >> ${FRP_INSTALL_DIR}/frpc.ini << EOF
 
 [app_tcp_${local_port}_to_${remote_port}]
@@ -508,10 +488,8 @@ EOF
         print_message "$GREEN" "✅ Tunnel ${local_port} -> ${remote_port} added."
     done
     
-    # Fix line endings
     sed -i 's/\r$//' ${FRP_INSTALL_DIR}/frpc.ini
     
-    # FRP Client Service Configuration
     cat > ${SYSTEMD_DIR}/frpc.service << EOF
 [Unit]
 Description=FRP Client
@@ -538,15 +516,12 @@ EOF
 configure_chisel_server() {
     print_section "CONFIGURING CHISEL SERVER"
     
-    # Authentication
     read -p "Enter auth user: " auth_user
     read -p "Enter auth pass: " auth_pass
     
-    # Port configuration
     read -p "Enter server port (default ${DEFAULT_CHISEL_PORT}): " server_port
     server_port=${server_port:-${DEFAULT_CHISEL_PORT}}
     
-    # SSL configuration
     read -p "Use HTTPS? (y/n): " use_https
     
     local chisel_cmd="/opt/chisel/chisel server --host 0.0.0.0 -p $server_port --auth ${auth_user}:${auth_pass} --reverse --keepalive 25s"
@@ -569,7 +544,6 @@ configure_chisel_server() {
         chisel_cmd="$chisel_cmd --tls-key ${CHISEL_INSTALL_DIR}/certs/server.key --tls-cert ${CHISEL_INSTALL_DIR}/certs/server.crt"
     fi
     
-    # Chisel Server Service Configuration
     cat > ${SYSTEMD_DIR}/chisel-server.service << EOF
 [Unit]
 Description=Chisel Server
@@ -590,7 +564,6 @@ EOF
     systemctl enable chisel-server.service
     systemctl restart chisel-server.service
     
-    # Firewall configuration
     if command -v ufw &>/dev/null; then
         ufw allow ${server_port}/tcp
         ufw reload
@@ -609,20 +582,16 @@ EOF
 configure_chisel_client() {
     print_section "CONFIGURING CHISEL CLIENT"
     
-    # Server connection details
     read -p "Enter server address (domain or IP): " server_address
     read -p "Enter server port: " server_port
     read -p "Enter auth user: " auth_user
     read -p "Enter auth pass: " auth_pass
     
-    # Protocol selection
     read -p "Use HTTPS? (y/n): " use_https
     
-    # Port forwarding configuration
     read -p "Enter REMOTE port to open on server: " remote_port
     read -p "Enter LOCAL port to forward from this machine: " local_port
     
-    # Build chisel command
     local schema="http"
     local tls_flags=""
     
@@ -633,7 +602,6 @@ configure_chisel_client() {
     
     local chisel_cmd="/opt/chisel/chisel client --auth ${auth_user}:${auth_pass} --keepalive 25s ${tls_flags} ${schema}://${server_address}:${server_port} R:${remote_port}:127.0.0.1:${local_port}"
     
-    # Chisel Client Service Configuration
     cat > ${SYSTEMD_DIR}/chisel-client.service << EOF
 [Unit]
 Description=Chisel Client
@@ -699,17 +667,14 @@ uninstall_frp() {
         return
     fi
     
-    # Stop and disable services
     systemctl stop frps.service 2>/dev/null
     systemctl disable frps.service 2>/dev/null
     systemctl stop frpc.service 2>/dev/null
     systemctl disable frpc.service 2>/dev/null
     
-    # Remove service files
     rm -f ${SYSTEMD_DIR}/frps.service
     rm -f ${SYSTEMD_DIR}/frpc.service
     
-    # Optionally remove Nginx configs
     read -p "Remove Nginx and its configs for FRP? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -735,13 +700,11 @@ uninstall_chisel() {
         return
     fi
     
-    # Stop and disable services
     systemctl stop chisel-server.service 2>/dev/null
     systemctl disable chisel-server.service 2>/dev/null
     systemctl stop chisel-client.service 2>/dev/null
     systemctl disable chisel-client.service 2>/dev/null
     
-    # Remove service files
     rm -f ${SYSTEMD_DIR}/chisel-server.service
     rm -f ${SYSTEMD_DIR}/chisel-client.service
     
@@ -788,8 +751,8 @@ view_logs() {
         print_header
         print_section "LOG VIEWER"
         
-        echo "  1) FRP Server     3) Chisel Server    5) Nginx"
-        echo "  2) FRP Client     4) Chisel Client    6) Back to Main Menu"
+        echo "  1) FRP Server   3) Chisel Server   5) Nginx"
+        echo "  2) FRP Client   4) Chisel Client   6) Back to Main Menu"
         
         read -p "Choice [1-6]: " choice
         
@@ -806,6 +769,121 @@ view_logs() {
         esac
         
         read -p "Press Enter to return..."
+    done
+}
+
+# ==================================================================================
+# SECTION: SERVER UTILITIES
+# ==================================================================================
+
+setup_service_restart_cron() {
+    print_section "SETUP AUTOMATIC TUNNEL RESTART"
+
+    local restart_commands=""
+    if systemctl is-active --quiet frps.service; then
+        restart_commands+="systemctl restart frps.service; "
+    fi
+    if systemctl is-active --quiet frpc.service; then
+        restart_commands+="systemctl restart frpc.service; "
+    fi
+    if systemctl is-active --quiet chisel-server.service; then
+        restart_commands+="systemctl restart chisel-server.service; "
+    fi
+    if systemctl is-active --quiet chisel-client.service; then
+        restart_commands+="systemctl restart chisel-client.service; "
+    fi
+
+    if [ -z "$restart_commands" ]; then
+        print_message "$RED" "No active FRP or Chisel services found to schedule a restart for."
+        return
+    fi
+    
+    local systemctl_path=$(command -v systemctl)
+    if [ -z "$systemctl_path" ]; then
+        print_message "$RED" "Could not find systemctl command. Cannot create cronjob."
+        return
+    fi
+    
+    restart_commands=$(echo "$restart_commands" | sed "s|systemctl|$systemctl_path|g")
+    
+    print_message "$CYAN" "The following services will be scheduled for automatic restart:"
+    local services_to_restart=$(echo "$restart_commands" | sed "s|$systemctl_path restart ||g" | sed "s|;||g")
+    print_message "$YELLOW" "-> ${services_to_restart}"
+
+    print_message "$YELLOW" "\nSelect a schedule for the automatic restart:"
+    echo "  1) Every 1 Hour"
+    echo "  2) Every 2 Hours"
+    echo "  3) Every 6 Hours"
+    echo "  4) Every 12 Hours"
+    echo "  5) Remove Existing Schedule"
+    echo "  6) Cancel"
+    read -p "Enter choice [1-6]: " choice
+
+    local cron_comment="#ManagedByTunnelScript-ServiceRestart"
+    (crontab -l 2>/dev/null | grep -v "$cron_comment") | crontab -
+
+    local cron_entry=""
+    case $choice in
+        1) cron_entry="0 * * * * ${restart_commands} ${cron_comment}";;
+        2) cron_entry="0 */2 * * * ${restart_commands} ${cron_comment}";;
+        3) cron_entry="0 */6 * * * ${restart_commands} ${cron_comment}";;
+        4) cron_entry="0 */12 * * * ${restart_commands} ${cron_comment}";;
+        5) print_message "$GREEN" "✅ Automatic service restart schedule removed."; return;;
+        6) print_message "$YELLOW" "Operation cancelled."; return;;
+        *) print_message "$RED" "Invalid option."; return;;
+    esac
+
+    (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
+    print_message "$GREEN" "✅ Automatic tunnel restart scheduled successfully."
+}
+
+add_inbound_port() {
+    print_section "OPEN INBOUND FIREWALL PORT"
+    read -p "Enter the port number to open: " port
+    if ! [[ "$port" =~ ^[0-9]+$ && "$port" -gt 0 && "$port" -lt 65536 ]]; then
+        print_message "$RED" "Invalid port number."
+        return
+    fi
+
+    read -p "Enter the protocol (tcp/udp): " protocol
+    protocol=$(echo "$protocol" | tr '[:upper:]' '[:lower:]')
+    if [[ "$protocol" != "tcp" && "$protocol" != "udp" ]]; then
+        print_message "$RED" "Invalid protocol. Please enter 'tcp' or 'udp'."
+        return
+    fi
+
+    if command -v ufw &>/dev/null; then
+        print_message "$BLUE" "UFW firewall detected. Opening port..."
+        ufw allow "${port}/${protocol}"
+        ufw reload
+        print_message "$GREEN" "✅ Port ${port}/${protocol} opened successfully in UFW."
+    elif systemctl is-active --quiet firewalld; then
+        print_message "$BLUE" "Firewalld detected. Opening port..."
+        firewall-cmd --permanent --add-port="${port}/${protocol}" >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
+        print_message "$GREEN" "✅ Port ${port}/${protocol} opened successfully in Firewalld."
+    else
+        print_message "$YELLOW" "⚠️ No supported firewall (UFW or Firewalld) was found."
+        print_message "$CYAN" "Please open port ${port}/${protocol} manually."
+    fi
+}
+
+server_utilities_menu() {
+    while true; do
+        print_header
+        print_section "SERVER UTILITIES"
+        echo "  1) Setup Automatic Tunnel Restart (Cronjob)"
+        echo "  2) Open New Inbound Port"
+        echo "  3) Back to Main Menu"
+
+        read -p "Choice [1-3]: " choice
+        
+        case $choice in
+            1) setup_service_restart_cron; break;;
+            2) add_inbound_port; break;;
+            3) return;;
+            *) print_message "$RED" "Invalid option.";;
+        esac
     done
 }
 
@@ -827,12 +905,13 @@ main() {
         echo -e "  ${WHITE}${BG_PURPLE} 3 ${NC} Setup Iran Server (Chisel)"
         echo -e "  ${WHITE}${BG_PURPLE} 4 ${NC} Setup Foreign Server (Chisel)"
         echo -e "  ${WHITE}${BG_GREEN} 5 ${NC} Manage Services"
-        echo -e "  ${WHITE}${BG_CYAN} 7 ${NC} View Logs"
-        echo -e "  ${WHITE}${BG_RED} 6 ${NC} Uninstall FRP"
-        echo -e "  ${WHITE}${BG_RED} 8 ${NC} Uninstall Chisel"
-        echo -e "  ${WHITE}${BG_YELLOW}${BLACK} 9 ${NC} Exit"
+        echo -e "  ${WHITE}${BG_CYAN} 6 ${NC} View Logs"
+        echo -e "  ${WHITE}${BG_YELLOW} 7 ${NC} Server Utilities"
+        echo -e "  ${WHITE}${BG_RED} 8 ${NC} Uninstall FRP"
+        echo -e "  ${WHITE}${BG_RED} 9 ${NC} Uninstall Chisel"
+        echo -e "  ${WHITE}${BG_BLACK} 10 ${NC} Exit"
         
-        read -p "Enter your choice [1-9]: " choice
+        read -p "Enter your choice [1-10]: " choice
         
         case $choice in
             1) setup_iran_server_frp;;
@@ -840,10 +919,11 @@ main() {
             3) setup_iran_server_chisel;;
             4) setup_foreign_server_chisel;;
             5) manage_services;;
-            6) uninstall_frp;;
-            7) view_logs;;
-            8) uninstall_chisel;;
-            9) print_message "$GREEN" "Goodbye!"; exit 0;;
+            6) view_logs;;
+            7) server_utilities_menu;;
+            8) uninstall_frp;;
+            9) uninstall_chisel;;
+            10) print_message "$GREEN" "Goodbye!"; exit 0;;
             *) print_message "$RED" "Invalid option.";;
         esac
         
